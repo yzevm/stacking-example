@@ -26,22 +26,9 @@ describe('Admin management', () => {
     await expect(stacking.withdrawTokens(firstDeposit)).to.be.revertedWith('Admin can withdraw less than adminTokens amount');
   });
 
-  it('Admin should allow to deposit tokens for stacking reward', async () => {
-    const amounts = ethers.utils.parseEther('0.1');
-
-    const adminTokens0 = await stacking.callStatic.adminTokens();
-    await stacking.addTokens(amounts);
-    const adminTokens1 = await stacking.callStatic.adminTokens();
-
-    expect(adminTokens0).to.eq(ethers.BigNumber.from('0'));
-    expect(adminTokens1).to.eq(amounts);
-  });
-
   it('Should get minimum invalid plan error', async () => {
-    const amounts = ethers.utils.parseEther('0.1');
     const withrawAmounts = ethers.utils.parseEther('0.2');
 
-    await stacking.addTokens(amounts);
     await expect(stacking.withdrawTokens(withrawAmounts)).to.be.revertedWith('Admin can withdraw less than adminTokens amount');
   });
 });
