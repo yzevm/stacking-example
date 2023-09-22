@@ -35,28 +35,33 @@ describe('Stacking', () => {
   it('Should get minimum invalid plan error', async () => {
     const amounts = ethers.utils.parseEther('0.1');
 
-    const [planId0, planId1, planId2] = [0, 1, 2];
+    const [planId0, planId1, planId2, planId3] = [0, 1, 2, 3];
 
     await stacking.deposit(planId0, amounts);
     await stacking.deposit(planId1, amounts);
     await stacking.deposit(planId2, amounts);
-    await expect(stacking.deposit(3, amounts)).to.be.revertedWith('Invalid plan');
+    await stacking.deposit(planId3, amounts);
+    await expect(stacking.deposit(4, amounts)).to.be.revertedWith('Invalid plan');
 
     const planInfo0 = await stacking.callStatic.plans(planId0);
     const planInfo1 = await stacking.callStatic.plans(planId1);
     const planInfo2 = await stacking.callStatic.plans(planId2);
+    const planInfo3 = await stacking.callStatic.plans(planId3);
 
     const plan0 = await stacking.callStatic.getPlanInfo(0);
     const plan1 = await stacking.callStatic.getPlanInfo(1);
     const plan2 = await stacking.callStatic.getPlanInfo(2);
+    const plan3 = await stacking.callStatic.getPlanInfo(3);
 
     const expectedPlan0 = { time: planInfo0.time, percent: planInfo0.percent };
     const expectedPlan1 = { time: planInfo1.time, percent: planInfo1.percent };
     const expectedPlan2 = { time: planInfo2.time, percent: planInfo2.percent };
+    const expectedPlan3 = { time: planInfo3.time, percent: planInfo3.percent };
 
     expect(plan0).to.containSubset(expectedPlan0);
     expect(plan1).to.containSubset(expectedPlan1);
     expect(plan2).to.containSubset(expectedPlan2);
+    expect(plan3).to.containSubset(expectedPlan3);
   });
 
   it('Check contract state after stacking', async () => {
@@ -80,8 +85,8 @@ describe('Stacking', () => {
 
     const userInfo = await stacking.callStatic.users(owner.address);
     const expectedUserInfo = {
-      seedIncome: ethers.BigNumber.from('0'),
       withdrawn: ethers.BigNumber.from('0'),
+      seedLoss: ethers.BigNumber.from('0'),
     };
     expect(userInfo).to.containSubset(expectedUserInfo);
 
@@ -99,7 +104,7 @@ describe('Stacking', () => {
     const expectedDepositInfo = {
       plan: planId,
       amount: amounts,
-      percent: ethers.BigNumber.from('1000'),
+      percent: ethers.BigNumber.from('11'),
       finish: finishTime,
       isTaken: false,
     };
@@ -112,9 +117,9 @@ describe('Stacking', () => {
     const planId = 0;
     await stacking.deposit(planId, amounts);
 
-    await expect(stacking.getUserDividends(owner.address, 1)).to.be.revertedWith('Invalid depositId');
+    await expect(stacking.getUserNegativeDividends(owner.address, 1)).to.be.revertedWith('Invalid depositId');
 
-    const userDividendsBefore = await stacking.getUserDividends(owner.address, 0);
+    const userDividendsBefore = await stacking.getUserNegativeDividends(owner.address, 0);
     expect(userDividendsBefore).to.eq(ethers.BigNumber.from('0'));
 
     await network.provider.send('evm_increaseTime', [365 * 24 * ONE_HOUR]);
@@ -131,21 +136,20 @@ describe('Stacking', () => {
       .div(ethers.utils.parseEther('1'));
     const totalDevidens = oneYearDividends.mul(to.sub(from)).div(ethers.BigNumber.from(ONE_YEAR));
 
-    const userDividendsAfter = await stacking.getUserDividends(owner.address, 0);
+    const userDividendsAfter = await stacking.getUserNegativeDividends(owner.address, 0);
     expect(userDividendsAfter).to.eq(totalDevidens);
   });
 
   it('withdraw tokens after one year', async () => {
     const amounts = ethers.utils.parseEther('10');
-    await stacking.addTokens(amounts); // for dividends tokens withdraw
 
     const planId = 0;
     const balanceBefore = await getBalance(owner.address);
     await stacking.deposit(planId, amounts);
 
-    await expect(stacking.getUserDividends(owner.address, 1)).to.be.revertedWith('Invalid depositId');
+    await expect(stacking.getUserNegativeDividends(owner.address, 1)).to.be.revertedWith('Invalid depositId');
 
-    const userDividendsBefore = await stacking.getUserDividends(owner.address, 0);
+    const userDividendsBefore = await stacking.getUserNegativeDividends(owner.address, 0);
     expect(userDividendsBefore).to.eq(ethers.BigNumber.from('0'));
 
     await network.provider.send('evm_increaseTime', [365 * 24 * ONE_HOUR]);
@@ -160,20 +164,18 @@ describe('Stacking', () => {
     const oneYearDividends = amounts
       .mul(ethers.utils.parseEther(planInfo.percent.toString()).div(PERCENT_DIVIDER))
       .div(ethers.utils.parseEther('1'));
-    const totalDevidens = oneYearDividends.mul(to.sub(from)).div(ethers.BigNumber.from(ONE_YEAR));
+    const totalDividends = oneYearDividends.mul(to.sub(from)).div(ethers.BigNumber.from(ONE_YEAR));
 
     await stacking.withdraw(planId);
 
     const balanceAfter = await getBalance(owner.address);
     const diff = balanceAfter.sub(balanceBefore);
 
-    expect(diff).to.eq(totalDevidens);
+    expect(diff).to.eq(totalDividends.mul(-1));
   });
 
   it('cannot withdraw tokens twice', async () => {
-    const adminTokens = ethers.utils.parseEther('30');
     const amounts = ethers.utils.parseEther('10');
-    await stacking.addTokens(adminTokens); // for dividends tokens withdraw
 
     await stacking.deposit(0, amounts);
 
@@ -186,9 +188,7 @@ describe('Stacking', () => {
   });
 
   it('withdraw with penalty', async () => {
-    const adminTokens = ethers.utils.parseEther('30');
     const amounts = ethers.utils.parseEther('10');
-    await stacking.addTokens(adminTokens); // for dividends tokens withdraw
 
     const balanceBefore = await getBalance(owner.address);
     const adminTokensBefore = await stacking.callStatic.adminTokens();
@@ -201,11 +201,17 @@ describe('Stacking', () => {
 
     const balanceAfter = await getBalance(owner.address);
     const diff = balanceAfter.sub(balanceBefore);
-    const expectedLoss = ethers.utils.parseEther('-0.3');
+    const expectedLoss = ethers.utils.parseEther('-6.66');
     expect(diff).to.eq(expectedLoss);
 
     const diffAdminTokens = adminTokensAfter.sub(adminTokensBefore);
-    const expectedAdminEarn = ethers.utils.parseEther('0.3');
+    const expectedAdminEarn = ethers.utils.parseEther('6.66');
     expect(diffAdminTokens).to.eq(expectedAdminEarn);
+
+    const adminBalanceBefore = await token.callStatic.balanceOf(owner.address);
+    await stacking.withdrawTokens(adminTokensAfter);
+    const adminBalanceAfter = await token.callStatic.balanceOf(owner.address);
+    const adminDiff = adminBalanceAfter.sub(adminBalanceBefore);
+    expect(expectedAdminEarn).to.eq(adminDiff);
   });
 });

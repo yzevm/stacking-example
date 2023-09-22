@@ -23,8 +23,7 @@ contract Stacking is Ownable, ReentrancyGuard {
 
   struct User {
     Deposit[] deposits;
-    uint256 checkpoint;
-    uint256 seedIncome;
+    uint256 seedLoss;
     uint256 withdrawn;
   }
 
@@ -32,7 +31,7 @@ contract Stacking is Ownable, ReentrancyGuard {
   uint256 public constant PERCENT_DIVIDER = 10000;
   uint256 public constant TIME_STEP = 1 days;
   uint256 public constant ONE_YEAR = 365 * TIME_STEP;
-  uint256 public constant PENALTY_PERCENT = 300;
+  uint256 public constant PENALTY_PERCENT = 6660;
 
   mapping(address => User) public users;
   Plan[] public plans;
@@ -48,9 +47,10 @@ contract Stacking is Ownable, ReentrancyGuard {
   constructor(address _tokenAddress) payable {
     token = IERC20(_tokenAddress);
 
-    plans.push(Plan(3 * 30, 1000));
-    plans.push(Plan(6 * 30, 1500));
-    plans.push(Plan(9 * 30, 2000));
+    plans.push(Plan(3 * 30, 11));
+    plans.push(Plan(6 * 30, 22));
+    plans.push(Plan(12 * 30, 66));
+    plans.push(Plan(5* 12 * 30, 120));
   }
 
   function deposit(uint8 plan, uint256 amounts) public nonReentrant {
@@ -61,7 +61,6 @@ contract Stacking is Ownable, ReentrancyGuard {
     User storage user = users[msg.sender];
 
     if (user.deposits.length == 0) {
-      user.checkpoint = block.timestamp;
       emit Newbie(msg.sender);
     }
 
@@ -71,7 +70,7 @@ contract Stacking is Ownable, ReentrancyGuard {
   }
 
   function withdraw(uint256 depositId) public nonReentrant {
-    uint256 dividens = getUserDividends(msg.sender, depositId);
+    uint256 negativeDividens = getUserNegativeDividends(msg.sender, depositId);
 
     User storage user = users[msg.sender];
     Deposit storage _deposit = user.deposits[depositId];
@@ -83,23 +82,17 @@ contract Stacking is Ownable, ReentrancyGuard {
       totalAmount = _deposit.amount.sub(_deposit.amount.mul(PENALTY_PERCENT).div(PERCENT_DIVIDER));
       adminTokens = adminTokens.add(_deposit.amount.sub(totalAmount));
     } else {
-      totalAmount = _deposit.amount.add(dividens);
-      user.seedIncome = user.seedIncome.add(dividens);
+      totalAmount = _deposit.amount.sub(negativeDividens);
+      user.seedLoss = user.seedLoss.add(negativeDividens);
     }
 
     require(getContractBalance() >= totalAmount, "Tokens are not available, please contact admin");
 
-    user.checkpoint = block.timestamp;
     user.withdrawn = user.withdrawn.add(totalAmount);
     token.transfer(msg.sender, totalAmount);
     _deposit.isTaken = true;
 
     emit Withdrawn(msg.sender, totalAmount);
-  }
-
-  function addTokens(uint256 amounts) public onlyOwner {
-    token.transferFrom(msg.sender, address(this), amounts);
-    adminTokens = adminTokens.add(amounts);
   }
 
   function withdrawTokens(uint256 amounts) public onlyOwner {
@@ -108,7 +101,7 @@ contract Stacking is Ownable, ReentrancyGuard {
     adminTokens = adminTokens.sub(amounts);
   }
 
-  function getUserDividends(address userAddress, uint256 depositId) public view returns (uint256) {
+  function getUserNegativeDividends(address userAddress, uint256 depositId) public view returns (uint256) {
     require(depositId < getUserAmountOfDeposits(userAddress), "Invalid depositId");
 
     User storage user = users[userAddress];

@@ -1,5 +1,5 @@
-const { ethers } = require("hardhat");
-import { Stacking__factory, TestToken__factory } from "../typechain-types";
+import { Stacking__factory, TestToken__factory } from '../typechain-types';
+const { ethers } = require('hardhat');
 
 async function main() {
   const accounts = await ethers.getSigners();
@@ -17,11 +17,11 @@ async function main() {
   const dividends = ethers.utils.parseEther('5');
   await stacking.addTokens(dividends); // for dividends tokens withdraw
 
-  await stacking.depositTokens(0, amount0);
-  await stacking.depositTokens(1, amount1);
-  await stacking.depositTokens(2, amount2);
+  await stacking.deposit(0, amount0);
+  await stacking.deposit(1, amount1);
+  await stacking.deposit(2, amount2);
 
-  console.log({ stacking: stacking.address })
+  console.log({ stacking: stacking.address });
 }
 
 // We recommend this pattern to be able to use async/await everywhere
